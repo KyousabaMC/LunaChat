@@ -200,6 +200,78 @@ public class BukkitEventListener implements Listener {
 
             // イベントをキャンセルして終了する
             event.setCancelled(true);
+
+            String message = event.getMessage();
+
+            // 一時的にJapanizeスキップ設定かどうかを確認する
+            boolean skipJapanize = false;
+            String marker = config.getNoneJapanizeMarker();
+            if (!marker.isEmpty() && message.startsWith(marker) ) {
+                skipJapanize = true;
+                message = message.substring(marker.length());
+            }
+
+            // 2byteコードを含む、または、半角カタカナのみなら、Japanize変換は行わない
+            String kanaTemp = Utility.stripColorCode(message);
+            if ( !skipJapanize &&
+                    ( kanaTemp.getBytes(StandardCharsets.UTF_8).length > kanaTemp.length() ||
+                            kanaTemp.matches("[ \\uFF61-\\uFF9F]+") ) ) {
+                skipJapanize = true;
+            }
+
+            // Japanize変換
+            if ( !skipJapanize &&
+                    LunaChat.getAPI().isPlayerJapanize(event.getPlayer().getName()) &&
+                    config.getJapanizeType() != JapanizeType.NONE ) {
+
+                int lineType = config.getJapanizeDisplayLine();
+
+                if ( lineType == 1 ) {
+
+                    String taskFormat = Utility.replaceColorCode(config.getJapanizeLine1Format());
+
+                    String japanized = api.japanize(
+                            kanaTemp, config.getJapanizeType());
+                    if ( japanized != null ) {
+                        String temp = taskFormat.replace("%msg", message);
+                        message = temp.replace("%japanize", japanized);
+                    }
+
+                }
+            }
+
+            // NGワード発言をマスク
+            for ( Pattern pattern : config.getNgwordCompiled() ) {
+                Matcher matcher = pattern.matcher(message);
+                if ( matcher.find() ) {
+                    message = matcher.replaceAll(
+                            Utility.getAstariskString(matcher.group(0).length()));
+                }
+            }
+
+            // カラーコード置き換え
+            // 置き換え設定になっていて、発言者がパーミッションを持っているなら、置き換えする
+            if ( config.isEnableNormalChatColorCode() &&
+                    event.getPlayer().hasPermission("lunachat.allowcc") ) {
+                message = Utility.replaceColorCode(message);
+            }
+            String ngMaskedMessage = message;
+
+            // チャンネル
+            String channelName = config.getGlobalChannel();
+            if (channelName == null) {
+                channelName = "global";
+            }
+
+            // イベントを発生させる
+            LunaChat.getEventSender().sendLunaChatChannelChatEvent(
+                    channelName,
+                    ChannelMember.getChannelMember(event.getPlayer()),
+                    event.getMessage(),
+                    ngMaskedMessage,
+                    config.getNormalChatMessageFormat()
+            );
+
             return;
         }
 
